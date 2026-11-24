@@ -1,137 +1,166 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="paper">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Private Content Vault</title>
+  <title>Quiet Notes</title>
+
+  <!-- Google Fonts: Newsreader (Editorial Serif) & Inter (UI Sans) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="styles.css">
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 </head>
 <body>
 
-  <!-- App Header -->
-  <header class="app-header">
-    <div class="header-inner">
-      <a href="#" class="site-logo">
-        <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-        </svg>
-        <span>Content Vault</span>
-      </a>
+  <div class="page-wrapper">
 
-      <div class="header-actions">
-        <button id="themeToggleBtn" class="btn-icon" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
-          <svg id="themeIcon" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="18" height="18">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-          </svg>
-        </button>
-
-        <button id="lockVaultBtn" class="btn-sm" style="display: none;">
-          Lock Vault
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main Container -->
-  <main class="main-container">
-
-    <!-- VIEW 1: GATE 1 (Passphrase & Token Verification) -->
+    <!-- ==========================================
+         GATE 1: WELCOME SCREEN
+         ========================================== -->
     <section id="viewGate1" class="view-panel active">
-      <div class="auth-card">
-        <div class="auth-header">
-          <div class="auth-icon">
-            <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="24" height="24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-            </svg>
-          </div>
-          <h1 class="auth-title">Encrypted Space</h1>
-          <p class="auth-subtitle">Enter the shared group passphrase and your personal friend token to begin.</p>
-        </div>
+      <header class="letter-header">
+        <h1 class="site-title">Quiet Notes</h1>
+        <p class="site-intro">A private space for thoughts shared with close friends.</p>
+      </header>
 
-        <div id="gate1Alert" class="alert alert-error"></div>
+      <div class="quiet-card">
+        <div id="gate1Alert" class="gentle-alert"></div>
 
         <form id="gate1Form">
           <div class="form-group">
-            <label class="form-label" for="groupPassInput">Group Passphrase</label>
-            <input type="password" id="groupPassInput" class="form-input" placeholder="e.g. starlight-odyssey" required autocomplete="current-password">
-            <span class="form-help">Protects quiz questions from public internet crawlers.</span>
+            <label class="form-label" for="passphraseInput">Passphrase</label>
+            <input type="password" id="passphraseInput" class="form-input" placeholder="Shared passphrase..." required autocomplete="current-password">
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="tokenInput">Personal Friend Token</label>
-            <input type="text" id="tokenInput" class="form-input" placeholder="tok_..." required autocomplete="off">
-            <span id="tokenStatusHelp" class="form-help">Auto-filled from your invite link or enter it manually.</span>
+          <!-- Rendered only if no #token=... was found in the URL -->
+          <div class="form-group" id="inviteTokenGroup" style="display: none;">
+            <label class="form-label" for="tokenInput">Personal invite code</label>
+            <input type="text" id="tokenInput" class="form-input" placeholder="e.g. tok_..." autocomplete="off">
           </div>
 
-          <button type="submit" id="gate1SubmitBtn" class="btn-primary">
-            <span>Unlock Memory Quiz</span>
+          <button type="submit" id="gate1SubmitBtn" class="btn-primary ui-text">
+            <span>Continue</span>
           </button>
         </form>
       </div>
     </section>
 
-    <!-- VIEW 2: GATE 2 (Memory Quiz) -->
+    <!-- ==========================================
+         GATE 2: SINGLE-CARD SCROLLABLE QUIZ
+         ========================================== -->
     <section id="viewGate2" class="view-panel">
-      <div class="quiz-card">
-        <div class="auth-header">
-          <span id="thresholdBadge" class="quiz-badge">Threshold: 3 / 5 Required</span>
-          <h1 class="auth-title">The Memory Threshold</h1>
-          <p class="auth-subtitle">Each correct answer decrypts one Shamir share. Reconstruct the master key by answering at least the required threshold.</p>
-        </div>
+      <header class="letter-header">
+        <h1 class="site-title">Shared Memories</h1>
+        <p id="quizInstructionText" class="site-intro">Answer at least 3 of these to step in.</p>
+      </header>
 
-        <div id="gate2Alert" class="alert"></div>
+      <div class="quiet-card">
+        <div id="gate2Alert" class="gentle-alert"></div>
 
         <form id="quizForm">
-          <div id="quizQuestionsContainer" class="quiz-questions-list">
-            <!-- Dynamic questions injected by app.js -->
+          <div id="quizListContainer" class="quiz-items">
+            <!-- Questions rendered dynamically with hints as placeholders -->
           </div>
 
-          <button type="submit" id="quizSubmitBtn" class="btn-primary">
-            <span>Verify Answers & Unlock Articles</span>
+          <button type="submit" id="quizSubmitBtn" class="btn-primary ui-text">
+            <span>Open notes</span>
           </button>
         </form>
       </div>
     </section>
 
-    <!-- VIEW 3: PRIVATE READER -->
-    <section id="viewReader" class="view-panel">
-      <div class="reader-layout">
-
-        <!-- Non-hostile attribution banner -->
-        <div class="attribution-banner">
-          <div class="attribution-text">
-            Shared privately with <span id="friendAttributionName" class="attribution-name">Friend</span> — please keep this space personal.
+    <!-- ==========================================
+         VIEW 3: FEED EXPERIENCE (CHRONOLOGICAL, INVISIBLE TIERS)
+         ========================================== -->
+    <section id="viewFeed" class="view-panel">
+      <header class="feed-header">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;">
+          <div>
+            <h1 id="feedGreeting" class="personal-greeting">Hey Friend — glad you're here.</h1>
+            <p class="greeting-sub">Collected letters and reflections.</p>
           </div>
-          <span id="friendTiersBadge" class="tier-badge general">General Access</span>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem;">
+            <!-- 3-Way Theme Switcher -->
+            <div class="theme-selector ui-text" role="radiogroup" aria-label="Theme">
+              <button type="button" class="theme-pill-btn active" data-theme-val="paper">Paper</button>
+              <button type="button" class="theme-pill-btn" data-theme-val="sepia">Sepia</button>
+              <button type="button" class="theme-pill-btn" data-theme-val="dark">Dark</button>
+            </div>
+
+            <button type="button" class="btn-tool lock-vault-btn" title="Lock notes and close" aria-label="Lock">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </button>
+          </div>
         </div>
+      </header>
 
-        <!-- Left Column: Posts List Sidebar -->
-        <aside class="post-sidebar">
-          <h2 class="sidebar-title">Articles</h2>
-          <nav id="postListNav" class="post-items-nav">
-            <!-- Dynamic post buttons injected by app.js -->
-          </nav>
-        </aside>
+      <div id="postsFeedContainer" class="posts-feed">
+        <!-- Chronological post cards injected dynamically -->
+      </div>
 
-        <!-- Right Column: Canvas Article Stage -->
-        <main class="canvas-stage">
-          <canvas id="articleCanvas"></canvas>
-        </main>
-
+      <div class="feed-footer-note" id="feedFooterNote">
+        Shared privately with you.
       </div>
     </section>
 
-  </main>
+    <!-- ==========================================
+         VIEW 4: BLOCK-CHUNKED ARTICLE READER
+         ========================================== -->
+    <section id="viewReader" class="view-panel">
+      <!-- Sticky Minimal Reader Top Bar -->
+      <nav class="reader-top-bar ui-text">
+        <button type="button" id="backToFeedBtn" class="btn-back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>All notes</span>
+        </button>
 
-  <!-- Blur-on-Unfocus Privacy Shield -->
-  <div id="privacyShield" class="privacy-shield" role="dialog" aria-modal="true" aria-label="Privacy Shield">
-    <div class="shield-content">
-      <svg class="shield-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-      </svg>
-      <h2 class="shield-title">Reading Paused</h2>
-      <p class="shield-desc">Window lost focus. Click anywhere on this screen to resume reading.</p>
+        <div class="reader-actions">
+          <!-- Text Size Reflow Buttons -->
+          <button type="button" id="textSizeDownBtn" class="btn-tool" title="Smaller text" aria-label="Smaller text">A-</button>
+          <button type="button" id="textSizeUpBtn" class="btn-tool" title="Larger text" aria-label="Larger text">A+</button>
+
+          <!-- 3-Way Theme Selector -->
+          <div class="theme-selector" role="radiogroup" aria-label="Theme">
+            <button type="button" class="theme-pill-btn active" data-theme-val="paper">Paper</button>
+            <button type="button" class="theme-pill-btn" data-theme-val="sepia">Sepia</button>
+            <button type="button" class="theme-pill-btn" data-theme-val="dark">Dark</button>
+          </div>
+
+          <!-- Discreet Lock Icon -->
+          <button type="button" class="btn-tool lock-vault-btn" title="Lock notes and close" aria-label="Lock">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Scrollable Block-Level Canvases Stack -->
+      <div id="articleChunksWrapper" class="article-chunks-wrapper">
+        <!-- Rendered by BlockCanvasReader -->
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==========================================
+       SOFT PRIVACY CURTAIN (BLUR-ON-UNFOCUS)
+       ========================================== -->
+  <div id="privacyCurtain" class="privacy-curtain" role="dialog" aria-modal="true" aria-label="Privacy Curtain">
+    <div class="curtain-card">
+      <h2 class="curtain-title">Paused while away</h2>
+      <p class="curtain-sub">Click anywhere to continue reading.</p>
     </div>
   </div>
 

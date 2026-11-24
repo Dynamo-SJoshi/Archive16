@@ -1,233 +1,333 @@
 /**
- * app.js - Client-Side Orchestration and Decryption Engine
- * All decryption runs strictly client-side using Web Crypto API.
- * Secrets, keys, and decrypted content are maintained strictly in-memory.
+ * app.js - Client-Side Orchestration with Non-Blocking Web Worker
+ * Warm Editorial Minimalism UI & Feed Experience
  */
 
-import {
-  bytesToHex,
-  normalizeAnswer,
-  sha256Hex,
-  deriveKeyPBKDF2,
-  importRawAesKey,
-  tryDecryptAESGCMString,
-  decryptAESGCMString,
-  combineShares
-} from './crypto-core.mjs';
+import { BlockCanvasReader } from './canvas-reader.js';
 
-import { CanvasArticleReader } from './canvas-reader.js';
+// Fallback direct crypto if module worker is not supported
+import * as CryptoCore from './crypto-core.mjs';
 
-// Strictly in-memory session state (NEVER persisted to localStorage/sessionStorage)
-const sessionState = {
+// In-memory session state (strictly never persisted to storage)
+const session = {
   token: '',
-  groupPassphrase: '',
-  quizData: null,          // { threshold, totalQuestions, questions }
-  quizMasterKeyHex: null,
-  friendPayload: null,     // { name, email, tiers, tierKeys }
-  posts: [],               // Decrypted articles
-  activePostId: null
+  friend: null,     // { name, email }
+  posts: [],        // combined chronological posts
+  quizData: null,   // { threshold, totalQuestions, questions }
+  activePost: null
 };
 
-// DOM Elements
+// DOM references
 const viewGate1 = document.getElementById('viewGate1');
 const viewGate2 = document.getElementById('viewGate2');
+const viewFeed = document.getElementById('viewFeed');
 const viewReader = document.getElementById('viewReader');
 
 const gate1Form = document.getElementById('gate1Form');
-const groupPassInput = document.getElementById('groupPassInput');
+const passphraseInput = document.getElementById('passphraseInput');
 const tokenInput = document.getElementById('tokenInput');
-const tokenStatusHelp = document.getElementById('tokenStatusHelp');
-const gate1Alert = document.getElementById('gate1Alert');
+const inviteTokenGroup = document.getElementById('inviteTokenGroup');
 const gate1SubmitBtn = document.getElementById('gate1SubmitBtn');
+const gate1Alert = document.getElementById('gate1Alert');
 
-const viewGate2Card = document.getElementById('viewGate2');
 const quizForm = document.getElementById('quizForm');
-const thresholdBadge = document.getElementById('thresholdBadge');
-const quizQuestionsContainer = document.getElementById('quizQuestionsContainer');
-const gate2Alert = document.getElementById('gate2Alert');
+const quizListContainer = document.getElementById('quizListContainer');
+const quizInstructionText = document.getElementById('quizInstructionText');
 const quizSubmitBtn = document.getElementById('quizSubmitBtn');
+const gate2Alert = document.getElementById('gate2Alert');
 
-const lockVaultBtn = document.getElementById('lockVaultBtn');
-const themeToggleBtn = document.getElementById('themeToggleBtn');
-const friendAttributionName = document.getElementById('friendAttributionName');
-const friendTiersBadge = document.getElementById('friendTiersBadge');
-const postListNav = document.getElementById('postListNav');
-const articleCanvas = document.getElementById('articleCanvas');
-const privacyShield = document.getElementById('privacyShield');
+const feedGreeting = document.getElementById('feedGreeting');
+const feedFooterNote = document.getElementById('feedFooterNote');
+const postsFeedContainer = document.getElementById('postsFeedContainer');
 
-// Reader instance
-let canvasReader = null;
+const backToFeedBtn = document.getElementById('backToFeedBtn');
+const textSizeDownBtn = document.getElementById('textSizeDownBtn');
+const textSizeUpBtn = document.getElementById('textSizeUpBtn');
+const articleChunksWrapper = document.getElementById('articleChunksWrapper');
+
+const privacyCurtain = document.getElementById('privacyCurtain');
+
+// Block-level Canvas Reader instance
+let blockReader = null;
+
+// Dedicated Web Worker
+let cryptoWorker = null;
+let workerMsgId = 0;
+const workerCallbacks = new Map();
+
+function initWorker() {
+  try {
+    cryptoWorker = new Worker('crypto-worker.js', { type: 'module' });
+    cryptoWorker.onmessage = function (e) {
+      const { id, success, data, error, validCount } = e.data;
+      const cb = workerCallbacks.get(id);
+      if (cb) {
+        workerCallbacks.delete(id);
+        cb({ success, data, error, validCount });
+      }
+    };
+  } catch (err) {
+    console.warn('Module worker could not be spawned, using main thread fallback:', err);
+    cryptoWorker = null;
+  }
+}
+
+/**
+ * Dispatch task to Web Worker with in-line fallback
+ */
+async function callCrypto(type, payload) {
+  if (cryptoWorker) {
+    return new Promise(resolve => {
+      const id = ++workerMsgId;
+      workerCallbacks.set(id, resolve);
+      cryptoWorker.postMessage({ id, type, payload });
+    });
+  }
+
+  // Fallback if workers are restricted in environment
+  return runCryptoFallback(type, payload);
+}
+
+async function runCryptoFallback(type, payload) {
+  try {
+    if (type === 'DECRYPT_QUESTIONS') {
+      const { groupPassphrase, questionsEnc } = payload;
+      const norm = CryptoCore.normalizeAnswer(groupPassphrase);
+      const qKey = await CryptoCore.deriveKeyPBKDF2(norm, questionsEnc.salt, 210000);
+      const str = await CryptoCore.tryDecryptAESGCMString(qKey, questionsEnc.iv, questionsEnc.ciphertext);
+      if (!str) return { success: false, error: 'INVALID_PASSPHRASE' };
+      return { success: true, data: JSON.parse(str) };
+    }
+
+    if (type === 'VERIFY_AND_UNLOCK') {
+      const { answers, sharesJson, keysJson, postsEnc, token, threshold } = payload;
+      const validShares = [];
+      for (const item of answers) {
+        if (!item.val || !item.val.trim()) continue;
+        const rec = sharesJson.find(s => s.questionId === item.id);
+        if (!rec) continue;
+        const key = await CryptoCore.deriveKeyPBKDF2(CryptoCore.normalizeAnswer(item.val), rec.salt, 210000);
+        const shareStr = await CryptoCore.tryDecryptAESGCMString(key, rec.iv, rec.ciphertext);
+        if (shareStr) {
+          try { validShares.push(JSON.parse(shareStr)); } catch {}
+        }
+      }
+
+      if (validShares.length < threshold) {
+        return { success: false, error: 'INSUFFICIENT_SHARES', validCount: validShares.length };
+      }
+
+      const masterKey = CryptoCore.combineShares(validShares.slice(0, threshold));
+      const masterKeyHex = CryptoCore.bytesToHex(masterKey);
+      const lookupId = await CryptoCore.sha256Hex(`friend:${token}`);
+      const env = keysJson[lookupId];
+      if (!env) return { success: false, error: 'REVOKED_OR_UNKNOWN_TOKEN' };
+
+      const wrapKey = await CryptoCore.deriveKeyPBKDF2(`${masterKeyHex}:${token}`, env.salt, 210000);
+      const payloadStr = await CryptoCore.tryDecryptAESGCMString(wrapKey, env.iv, env.ciphertext);
+      if (!payloadStr) return { success: false, error: 'ENVELOPE_DECRYPT_FAILED' };
+
+      const friendPayload = JSON.parse(payloadStr);
+      const allPosts = [];
+      for (const t of (friendPayload.tiers || ['general'])) {
+        if (friendPayload.tierKeys && friendPayload.tierKeys[t] && postsEnc[t]) {
+          const rawKey = friendPayload.tierKeys[t];
+          const aesKey = await CryptoCore.importRawAesKey(rawKey);
+          const pStr = await CryptoCore.decryptAESGCMString(aesKey, postsEnc[t].iv, postsEnc[t].ciphertext);
+          allPosts.push(...JSON.parse(pStr));
+        }
+      }
+      allPosts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      return {
+        success: true,
+        data: {
+          friend: { name: friendPayload.name, email: friendPayload.email },
+          posts: allPosts
+        }
+      };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
 
 // ==========================================
-// Initialization & Token Detection
+// App Initialization
 // ==========================================
 
 function init() {
+  initWorker();
   initTheme();
-  initTokenFromHash();
-  initPrivacyShield();
-  canvasReader = new CanvasArticleReader(articleCanvas);
+  initInvisibleToken();
+  initPrivacyCurtain();
+
+  blockReader = new BlockCanvasReader(articleChunksWrapper);
 
   gate1Form.addEventListener('submit', handleGate1Submit);
   quizForm.addEventListener('submit', handleQuizSubmit);
-  lockVaultBtn.addEventListener('click', lockVault);
-}
+  backToFeedBtn.addEventListener('click', () => switchView('feed'));
 
-function initTheme() {
-  const savedTheme = localStorage.getItem('vault_theme');
-  if (savedTheme) {
-    document.documentElement.setAttribute('data-theme', savedTheme);
-  }
+  textSizeDownBtn.addEventListener('click', () => {
+    blockReader.setFontSizeStep(blockReader.sizeStep - 1);
+  });
+  textSizeUpBtn.addEventListener('click', () => {
+    blockReader.setFontSizeStep(blockReader.sizeStep + 1);
+  });
 
-  themeToggleBtn.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    let newTheme = 'dark';
-    if (currentTheme === 'dark') {
-      newTheme = 'light';
-    } else if (currentTheme === 'light') {
-      newTheme = 'dark';
-    } else {
-      // System default
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      newTheme = prefersDark ? 'light' : 'dark';
-    }
-
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('vault_theme', newTheme);
-
-    if (sessionState.posts.length > 0 && sessionState.activePostId) {
-      const activePost = sessionState.posts.find(p => p.id === sessionState.activePostId);
-      if (activePost) {
-        canvasReader.renderPost(activePost, sessionState.friendPayload);
-      }
-    }
+  document.querySelectorAll('.lock-vault-btn').forEach(btn => {
+    btn.addEventListener('click', lockVault);
   });
 }
 
 /**
- * Extract token from URL hash (e.g. #token=abc or #abc)
- * Immediately wipe from address bar using history.replaceState
+ * 3-Way Theme Support: Paper, Sepia, Late-Night Journal (Dark)
  */
-function initTokenFromHash() {
-  const hash = window.location.hash ? window.location.hash.substring(1) : '';
-  if (!hash) return;
+function initTheme() {
+  const savedTheme = localStorage.getItem('reading_theme') || 'paper';
+  setTheme(savedTheme);
 
+  document.querySelectorAll('.theme-selector').forEach(selector => {
+    selector.addEventListener('click', e => {
+      const btn = e.target.closest('.theme-pill-btn');
+      if (!btn) return;
+      const themeVal = btn.dataset.themeVal;
+      setTheme(themeVal);
+      localStorage.setItem('reading_theme', themeVal);
+
+      // Re-render current article if in reader view
+      if (viewReader.classList.contains('active') && session.activePost) {
+        blockReader.renderArticle(session.activePost, session.friend);
+      }
+    });
+  });
+}
+
+function setTheme(themeName) {
+  document.documentElement.setAttribute('data-theme', themeName);
+  document.querySelectorAll('.theme-pill-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.themeVal === themeName);
+  });
+}
+
+/**
+ * Silently read #token=... from window.location.hash
+ * Store ONLY in memory, immediately wipe from address bar
+ * Do NOT show any technical banners
+ */
+function initInvisibleToken() {
+  const hash = window.location.hash ? window.location.hash.substring(1) : '';
   let token = '';
+
   if (hash.startsWith('token=')) {
     token = hash.replace('token=', '').trim();
-  } else if (!hash.includes('=')) {
+  } else if (hash && !hash.includes('=')) {
     token = hash.trim();
   }
 
   if (token) {
-    sessionState.token = token;
-    tokenInput.value = token;
-    tokenStatusHelp.textContent = 'Token securely loaded from link and wiped from address bar.';
-    tokenStatusHelp.style.color = 'var(--success)';
-
-    // Wipe hash from visible URL without reloading
+    session.token = token;
+    // Silently remove from URL
     history.replaceState(null, '', window.location.pathname + window.location.search);
+    // Hide manual token input because token is already loaded
+    inviteTokenGroup.style.display = 'none';
+  } else {
+    // Only render quiet invite code input if no hash was present
+    inviteTokenGroup.style.display = 'block';
   }
 }
 
 // ==========================================
-// UI View Switching & Alerts
+// View Transitions & Gentle Alerts
 // ==========================================
 
 function switchView(target) {
   viewGate1.classList.remove('active');
   viewGate2.classList.remove('active');
+  viewFeed.classList.remove('active');
   viewReader.classList.remove('active');
 
-  if (target === 'gate1') {
-    viewGate1.classList.add('active');
-    lockVaultBtn.style.display = 'none';
-  } else if (target === 'gate2') {
-    viewGate2.classList.add('active');
-    lockVaultBtn.style.display = 'inline-block';
-  } else if (target === 'reader') {
-    viewReader.classList.add('active');
-    lockVaultBtn.style.display = 'inline-block';
-  }
+  if (target === 'gate1') viewGate1.classList.add('active');
+  else if (target === 'gate2') viewGate2.classList.add('active');
+  else if (target === 'feed') viewFeed.classList.add('active');
+  else if (target === 'reader') viewReader.classList.add('active');
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function showAlert(element, message, type = 'error') {
-  element.textContent = message;
-  element.className = `alert visible alert-${type}`;
+function showGentleAlert(el, message) {
+  el.textContent = message;
+  el.classList.add('visible');
 }
 
-function clearAlert(element) {
-  element.textContent = '';
-  element.className = 'alert';
+function clearGentleAlert(el) {
+  el.textContent = '';
+  el.classList.remove('visible');
 }
 
-function setBtnLoading(btn, isLoading, loadingText = 'Verifying...') {
+function setBtnLoading(btn, isLoading, loadingText = 'Opening...') {
   if (isLoading) {
     btn.disabled = true;
-    btn.dataset.origHtml = btn.innerHTML;
-    btn.innerHTML = `<span class="spinner"></span> <span>${loadingText}</span>`;
+    btn.dataset.origText = btn.innerHTML;
+    btn.innerHTML = `<span class="calm-spinner"></span> <span>${loadingText}</span>`;
   } else {
     btn.disabled = false;
-    if (btn.dataset.origHtml) {
-      btn.innerHTML = btn.dataset.origHtml;
+    if (btn.dataset.origText) {
+      btn.innerHTML = btn.dataset.origText;
     }
   }
 }
 
 // ==========================================
-// Gate 1: Group Passphrase & Questions Decryption
+// Gate 1: Welcome & Questions Decryption
 // ==========================================
 
 async function handleGate1Submit(e) {
   e.preventDefault();
-  clearAlert(gate1Alert);
+  clearGentleAlert(gate1Alert);
 
-  const groupPass = groupPassInput.value.trim();
-  const token = tokenInput.value.trim();
-
-  if (!groupPass) {
-    showAlert(gate1Alert, 'Please enter the group passphrase.');
-    return;
-  }
-  if (!token) {
-    showAlert(gate1Alert, 'Please enter or provide your personal friend token.');
+  const passphrase = passphraseInput.value.trim();
+  if (!passphrase) {
+    showGentleAlert(gate1Alert, "Please enter the passphrase.");
     return;
   }
 
-  sessionState.groupPassphrase = groupPass;
-  sessionState.token = token;
+  // If token was not in URL, read from manual input
+  if (!session.token) {
+    const manualToken = tokenInput.value.trim();
+    if (!manualToken) {
+      showGentleAlert(gate1Alert, "Please enter your personal invite code.");
+      return;
+    }
+    session.token = manualToken;
+  }
 
-  setBtnLoading(gate1SubmitBtn, true, 'Unlocking Questions...');
+  setBtnLoading(gate1SubmitBtn, true, 'Opening...');
 
   try {
-    // 1. Fetch encrypted questions file
     const res = await fetch('data/questions.enc');
     if (!res.ok) {
-      throw new Error(`Failed to load data/questions.enc (HTTP ${res.status})`);
+      throw new Error("Could not load notes.");
     }
     const questionsEnc = await res.json();
 
-    // 2. Derive key from normalized groupPassphrase
-    const normPass = normalizeAnswer(groupPass);
-    const qKey = await deriveKeyPBKDF2(normPass, questionsEnc.salt, 210000);
+    // Run PBKDF2 off-thread in Web Worker
+    const result = await callCrypto('DECRYPT_QUESTIONS', {
+      groupPassphrase: passphrase,
+      questionsEnc
+    });
 
-    // 3. Attempt decryption
-    const decryptedJsonStr = await tryDecryptAESGCMString(qKey, questionsEnc.iv, questionsEnc.ciphertext);
-    if (!decryptedJsonStr) {
-      showAlert(gate1Alert, 'Incorrect group passphrase. Please check the passphrase and try again.');
+    if (!result.success) {
+      showGentleAlert(gate1Alert, "That passphrase doesn't seem quite right. Double-check and try again.");
       setBtnLoading(gate1SubmitBtn, false);
       return;
     }
 
-    const quizData = JSON.parse(decryptedJsonStr);
-    sessionState.quizData = quizData;
-
-    // 4. Render Quiz in Gate 2
-    renderQuizView(quizData);
+    session.quizData = result.data;
+    renderQuizView(result.data);
     switchView('gate2');
   } catch (err) {
-    console.error('Gate 1 Error:', err);
-    showAlert(gate1Alert, `Error: ${err.message || 'Could not unlock questions.'}`);
+    console.error(err);
+    showGentleAlert(gate1Alert, "Unable to open notes right now. Please try again in a moment.");
   } finally {
     setBtnLoading(gate1SubmitBtn, false);
   }
@@ -235,302 +335,193 @@ async function handleGate1Submit(e) {
 
 function renderQuizView(quizData) {
   const { threshold, totalQuestions, questions } = quizData;
-  thresholdBadge.textContent = `Threshold: ${threshold} of ${totalQuestions} Required`;
-  quizQuestionsContainer.innerHTML = '';
+  quizInstructionText.textContent = `Answer at least ${threshold} of these ${totalQuestions} to step in.`;
+  quizListContainer.innerHTML = '';
 
   questions.forEach((q, idx) => {
-    const qBox = document.createElement('div');
-    qBox.className = 'question-box';
+    const item = document.createElement('div');
+    item.className = 'quiz-item';
 
-    const hintHtml = q.hint ? `<div class="question-hint">Hint: ${escapeHtml(q.hint)}</div>` : '';
+    // Use question's hint directly as exact-match formatting placeholder
+    const hintPlaceholder = q.hint ? q.hint : 'Your answer...';
 
-    qBox.innerHTML = `
-      <div class="question-header">
-        <span class="question-num">Question ${idx + 1} of ${totalQuestions}</span>
-      </div>
-      <div class="question-prompt">${escapeHtml(q.prompt)}</div>
-      ${hintHtml}
-      <input type="text" class="question-input" data-qid="${q.id}" placeholder="Your answer..." autocomplete="off">
+    item.innerHTML = `
+      <label class="quiz-prompt" for="q_input_${idx}">${escapeHtml(q.prompt)}</label>
+      <input type="text" id="q_input_${idx}" class="form-input" data-qid="${q.id}" placeholder="${escapeHtml(hintPlaceholder)}" autocomplete="off">
     `;
-    quizQuestionsContainer.appendChild(qBox);
+    quizListContainer.appendChild(item);
   });
 }
 
 // ==========================================
-// Gate 2: Quiz Verification & Shamir Key Reconstruction
+// Gate 2: Quiz Verification & Non-Blocking Worker Decryption
 // ==========================================
 
 async function handleQuizSubmit(e) {
   e.preventDefault();
-  clearAlert(gate2Alert);
+  clearGentleAlert(gate2Alert);
 
-  const inputs = quizQuestionsContainer.querySelectorAll('.question-input');
-  const userAnswers = [];
+  const inputs = quizListContainer.querySelectorAll('input');
+  const answers = [];
   inputs.forEach(input => {
     const qId = input.dataset.qid;
     const val = input.value.trim();
     if (val) {
-      userAnswers.push({ id: qId, val });
+      answers.push({ id: qId, val });
     }
   });
 
-  const K = sessionState.quizData.threshold;
-  if (userAnswers.length < K) {
-    showAlert(
-      gate2Alert,
-      `You have answered ${userAnswers.length} question(s). At least ${K} answers are required to reach the threshold.`
-    );
+  const K = session.quizData.threshold;
+  if (answers.length < K) {
+    showGentleAlert(gate2Alert, `Please answer at least ${K} questions to step in.`);
     return;
   }
 
-  setBtnLoading(quizSubmitBtn, true, 'Decrypting Shares...');
+  // Non-blocking loading state
+  setBtnLoading(quizSubmitBtn, true, 'Unlocking your pages...');
 
   try {
-    // 1. Fetch shares.json and keys.json in parallel
-    const [sharesRes, keysRes] = await Promise.all([
+    const [sharesRes, keysRes, postsRes] = await Promise.all([
       fetch('data/shares.json'),
-      fetch('data/keys.json')
+      fetch('data/keys.json'),
+      fetch('data/posts.enc')
     ]);
 
-    if (!sharesRes.ok || !keysRes.ok) {
-      throw new Error('Failed to load cryptographic vault artifacts.');
+    if (!sharesRes.ok || !keysRes.ok || !postsRes.ok) {
+      throw new Error("Failed to load notes data.");
     }
 
     const sharesJson = await sharesRes.json();
     const keysJson = await keysRes.json();
-
-    // 2. Attempt decrypting each answered question's share
-    const validShares = [];
-
-    for (const item of userAnswers) {
-      const shareRecord = sharesJson.find(s => s.questionId === item.id);
-      if (!shareRecord) continue;
-
-      const normAns = normalizeAnswer(item.val);
-      const shareKey = await deriveKeyPBKDF2(normAns, shareRecord.salt, 210000);
-      const decryptedShareStr = await tryDecryptAESGCMString(shareKey, shareRecord.iv, shareRecord.ciphertext);
-
-      if (decryptedShareStr) {
-        try {
-          const shareObj = JSON.parse(decryptedShareStr);
-          validShares.push(shareObj); // { x, y }
-        } catch {
-          // Ignore invalid share json
-        }
-      }
-    }
-
-    // 3. Check if threshold reached
-    if (validShares.length < K) {
-      showAlert(
-        gate2Alert,
-        `Only ${validShares.length} of ${K} required shares decrypted successfully. Please verify your answers and try again.`
-      );
-      setBtnLoading(quizSubmitBtn, false);
-      return;
-    }
-
-    setBtnLoading(quizSubmitBtn, true, 'Reconstructing Key & Opening Envelope...');
-
-    // 4. Shamir reconstruction of QuizMasterKey
-    const masterKeyBytes = combineShares(validShares.slice(0, K));
-    const masterKeyHex = bytesToHex(masterKeyBytes);
-    sessionState.quizMasterKeyHex = masterKeyHex;
-
-    // 5. Look up friend envelope in keys.json
-    const lookupId = await sha256Hex(`friend:${sessionState.token}`);
-    const friendEnvelope = keysJson[lookupId];
-
-    if (!friendEnvelope) {
-      showAlert(
-        gate2Alert,
-        'Your answers are correct, but your friend token is not recognized or has been deactivated. Please contact the author.'
-      );
-      setBtnLoading(quizSubmitBtn, false);
-      return;
-    }
-
-    // 6. Unwrap friend envelope
-    const friendWrapPass = `${masterKeyHex}:${sessionState.token}`;
-    const friendWrapKey = await deriveKeyPBKDF2(friendWrapPass, friendEnvelope.salt, 210000);
-    const friendPayloadStr = await tryDecryptAESGCMString(friendWrapKey, friendEnvelope.iv, friendEnvelope.ciphertext);
-
-    if (!friendPayloadStr) {
-      showAlert(gate2Alert, 'Failed to unwrap friend credentials. Please check your token.');
-      setBtnLoading(quizSubmitBtn, false);
-      return;
-    }
-
-    const friendPayload = JSON.parse(friendPayloadStr);
-    sessionState.friendPayload = friendPayload;
-
-    setBtnLoading(quizSubmitBtn, true, 'Decrypting Articles...');
-
-    // 7. Fetch and decrypt posts.enc
-    const postsRes = await fetch('data/posts.enc');
-    if (!postsRes.ok) {
-      throw new Error(`Failed to load data/posts.enc (HTTP ${postsRes.status})`);
-    }
     const postsEnc = await postsRes.json();
 
-    const allDecryptedPosts = [];
+    // Offload all PBKDF2 derivations, Shamir reconstruction, and envelope unwrapping to Web Worker
+    const result = await callCrypto('VERIFY_AND_UNLOCK', {
+      answers,
+      sharesJson,
+      keysJson,
+      postsEnc,
+      token: session.token,
+      threshold: K
+    });
 
-    for (const tier of (friendPayload.tiers || ['general'])) {
-      if (friendPayload.tierKeys && friendPayload.tierKeys[tier] && postsEnc[tier]) {
-        try {
-          const tierRawKey = friendPayload.tierKeys[tier];
-          const aesKey = await importRawAesKey(tierRawKey);
-          const decryptedTierStr = await decryptAESGCMString(aesKey, postsEnc[tier].iv, postsEnc[tier].ciphertext);
-          const tierPosts = JSON.parse(decryptedTierStr);
-          allDecryptedPosts.push(...tierPosts);
-        } catch (tierErr) {
-          console.warn(`Could not decrypt tier '${tier}':`, tierErr);
-        }
-      }
-    }
-
-    // Sort newest-first
-    allDecryptedPosts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    sessionState.posts = allDecryptedPosts;
-
-    if (allDecryptedPosts.length === 0) {
-      showAlert(gate2Alert, 'No articles available for your access tier.');
+    if (!result.success) {
+      // Gentle, aggregate human error feedback (never per-question indicators)
+      showGentleAlert(
+        gate2Alert,
+        "Almost there—a few didn't quite match. Double-check spelling or date formats and try again."
+      );
       setBtnLoading(quizSubmitBtn, false);
       return;
     }
 
-    // 8. Open Reader UI
-    renderReaderView();
-    switchView('reader');
+    session.friend = result.data.friend;
+    session.posts = result.data.posts;
+
+    // Render warm personal feed
+    renderFeedView();
+    switchView('feed');
   } catch (err) {
-    console.error('Quiz Verification Error:', err);
-    showAlert(gate2Alert, `Error: ${err.message || 'Failed to verify answers.'}`);
+    console.error(err);
+    showGentleAlert(gate2Alert, "Something went wrong while unlocking. Please try again.");
   } finally {
     setBtnLoading(quizSubmitBtn, false);
   }
 }
 
 // ==========================================
-// Reader View Rendering
+// Feed View: Seamless Chronological Feed
 // ==========================================
 
-function renderReaderView() {
-  const friend = sessionState.friendPayload;
-  friendAttributionName.textContent = friend.name || 'Friend';
+function renderFeedView() {
+  const friendName = session.friend && session.friend.name ? session.friend.name : 'Friend';
+  feedGreeting.textContent = `Hey ${friendName} — glad you're here.`;
+  feedFooterNote.textContent = `Shared privately with ${friendName}.`;
 
-  const hasInner = Array.isArray(friend.tiers) && friend.tiers.includes('inner');
-  friendTiersBadge.textContent = hasInner ? 'Inner Circle' : 'General Access';
-  friendTiersBadge.className = `tier-badge ${hasInner ? 'inner' : 'general'}`;
+  postsFeedContainer.innerHTML = '';
 
-  // Populate sidebar post nav
-  postListNav.innerHTML = '';
-  sessionState.posts.forEach((post, idx) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `post-nav-item ${idx === 0 ? 'active' : ''}`;
-    btn.dataset.id = post.id;
+  session.posts.forEach(post => {
+    const card = document.createElement('article');
+    card.className = 'post-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
 
-    btn.innerHTML = `
-      <div class="post-item-top">
-        <span class="tier-badge ${post.tier === 'inner' ? 'inner' : 'general'}">${post.tier || 'general'}</span>
-        <span class="post-item-date">${escapeHtml(post.date || '')}</span>
-      </div>
-      <div class="post-item-title">${escapeHtml(post.title || 'Untitled')}</div>
-      <div class="post-item-summary">${escapeHtml(post.summary || '')}</div>
+    card.innerHTML = `
+      <div class="post-card-date ui-text">${escapeHtml(post.date || '')}</div>
+      <h2 class="post-card-title">${escapeHtml(post.title || 'Untitled')}</h2>
+      ${post.summary ? `<p class="post-card-summary">${escapeHtml(post.summary)}</p>` : ''}
     `;
 
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.post-nav-item').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectPost(post.id);
+    const openPost = () => {
+      session.activePost = post;
+      blockReader.renderArticle(post, session.friend);
+      switchView('reader');
+    };
+
+    card.addEventListener('click', openPost);
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPost();
+      }
     });
 
-    postListNav.appendChild(btn);
-  });
-
-  // Select first post
-  if (sessionState.posts.length > 0) {
-    selectPost(sessionState.posts[0].id);
-  }
-}
-
-function selectPost(postId) {
-  sessionState.activePostId = postId;
-  const post = sessionState.posts.find(p => p.id === postId);
-  if (!post) return;
-
-  canvasReader.renderPost(post, {
-    name: sessionState.friendPayload.name,
-    email: sessionState.friendPayload.email
+    postsFeedContainer.appendChild(card);
   });
 }
 
 // ==========================================
-// Vault Locking & Memory Purge
+// Lock Vault: Memory Wipe & Clean Return
 // ==========================================
 
 function lockVault() {
-  // Purge all in-memory keys, tokens, and decrypted content
-  sessionState.token = '';
-  sessionState.groupPassphrase = '';
-  sessionState.quizData = null;
-  sessionState.quizMasterKeyHex = null;
-  sessionState.friendPayload = null;
-  sessionState.posts = [];
-  sessionState.activePostId = null;
+  // Purge all secrets, keys, and decrypted content from memory
+  session.token = '';
+  session.friend = null;
+  session.posts = [];
+  session.quizData = null;
+  session.activePost = null;
 
-  // Clear inputs
-  groupPassInput.value = '';
+  // Clear input fields
+  passphraseInput.value = '';
   tokenInput.value = '';
-  tokenStatusHelp.textContent = 'Auto-filled from your invite link or enter it manually.';
-  tokenStatusHelp.style.color = '';
-  quizQuestionsContainer.innerHTML = '';
+  quizListContainer.innerHTML = '';
+  articleChunksWrapper.innerHTML = '';
 
-  // Clear Canvas
-  const ctx = articleCanvas.getContext('2d');
-  ctx.clearRect(0, 0, articleCanvas.width, articleCanvas.height);
+  clearGentleAlert(gate1Alert);
+  clearGentleAlert(gate2Alert);
 
-  clearAlert(gate1Alert);
-  clearAlert(gate2Alert);
+  // Restore invite token field in case user logs in with another token
+  inviteTokenGroup.style.display = 'block';
 
   switchView('gate1');
 }
 
 // ==========================================
-// Blur-on-Unfocus Privacy Curtain & Screenshot Friction
+// Soft Privacy Curtain (Blur-on-Unfocus)
 // ==========================================
 
-function initPrivacyShield() {
-  const showShield = () => {
-    // Only engage privacy shield when reader is active
-    if (viewReader.classList.contains('active')) {
-      privacyShield.classList.add('active');
+function initPrivacyCurtain() {
+  const showCurtain = () => {
+    // Only engage curtain when unlocked in feed or reader view
+    if (viewFeed.classList.contains('active') || viewReader.classList.contains('active')) {
+      privacyCurtain.classList.add('active');
     }
   };
 
-  const hideShield = () => {
-    privacyShield.classList.remove('active');
+  const hideCurtain = () => {
+    privacyCurtain.classList.remove('active');
   };
 
-  // Window blur (user clicks outside or tabs away)
-  window.addEventListener('blur', showShield);
-
-  // Document visibility change (user minimizes or switches tabs)
+  window.addEventListener('blur', showCurtain);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      showShield();
-    }
+    if (document.hidden) showCurtain();
   });
-
-  // PrintScreen key intercept
   window.addEventListener('keydown', e => {
-    if (e.key === 'PrintScreen' || e.keyCode === 44) {
-      showShield();
-    }
+    if (e.key === 'PrintScreen' || e.keyCode === 44) showCurtain();
   });
 
-  // Click shield to resume
-  privacyShield.addEventListener('click', hideShield);
+  privacyCurtain.addEventListener('click', hideCurtain);
 }
 
 // Helper: Escape HTML

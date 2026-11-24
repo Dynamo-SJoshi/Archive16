@@ -1,28 +1,59 @@
 /**
- * canvas-reader.js - High-DPI Responsive HTML5 Canvas Markdown Reader
- * Features:
- * - High-DPI (window.devicePixelRatio) crisp typography.
- * - Basic Markdown parsing: headings (#, ##, ###), paragraphs, blockquotes, bullets, dividers, bold/italic.
- * - Dynamic height computation and responsive resize handling.
- * - Forensic Watermarking: faint repeating diagonal watermark [friend.email] • [YYYY-MM-DD HH:MM] (~0.06 alpha).
- * - Canvas copy/selection protection & context menu suppression.
+ * canvas-reader.js - Block-Chunked High-DPI Canvas Markdown Article Reader
+ *
+ * Warm Editorial Minimalism:
+ * - Block-Level Chunking: Each Markdown element (header, paragraph, blockquote, list, divider)
+ *   is rendered onto its own tightly-sized <canvas> element. Mobile browsers never hit GPU
+ *   height limits, and touch scrolling remains native 60fps.
+ * - Font Readiness & Retina Crispness: Awaits document.fonts.ready before measuring/drawing.
+ * - Scaled by window.devicePixelRatio for crisp native typography.
+ * - Continuous Watermark: Aligns tiling grid using each block's accumulated vertical offset
+ *   so the diagonal watermark flows seamlessly down the entire article.
+ * - Anti-Copy friction: user-select disabled, contextmenu prevented.
  */
 
-export class CanvasArticleReader {
+export class BlockCanvasReader {
   /**
-   * @param {HTMLCanvasElement} canvasElement
-   * @param {object} [options]
+   * @param {HTMLElement} containerElement - Scrollable DOM container for canvas blocks
    */
-  constructor(canvasElement, options = {}) {
-    this.canvas = canvasElement;
-    this.ctx = canvasElement.getContext('2d');
-    this.options = options;
+  constructor(containerElement) {
+    this.container = containerElement;
     this.currentPost = null;
-    this.watermarkInfo = null;
+    this.friendInfo = null;
 
-    // Attach right-click prevention
-    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
-    this.canvas.addEventListener('selectstart', e => e.preventDefault());
+    // Font size steps: 0 = Small, 1 = Normal (default), 2 = Large, 3 = Extra Large
+    this.sizeStep = 1;
+
+    // Theme palettes matching CSS custom properties
+    this.palettes = {
+      paper: {
+        bg: '#FAF8F5',
+        card: '#F2EEE7',
+        ink: '#1F1E1C',
+        muted: '#6E6A63',
+        border: '#E5DFD5',
+        accent: '#5B7065',
+        watermark: 'rgba(31, 30, 28, 0.05)'
+      },
+      sepia: {
+        bg: '#F3EBD8',
+        card: '#EAE0C9',
+        ink: '#2C241B',
+        muted: '#706354',
+        border: '#DFD3BA',
+        accent: '#8C5A3C',
+        watermark: 'rgba(44, 36, 27, 0.05)'
+      },
+      dark: {
+        bg: '#161513',
+        card: '#1F1D1A',
+        ink: '#E8E4DC',
+        muted: '#9A9389',
+        border: '#2D2A26',
+        accent: '#8AA697',
+        watermark: 'rgba(232, 228, 220, 0.05)'
+      }
+    };
 
     // Debounced resize handler
     this._resizeTimeout = null;
@@ -30,7 +61,7 @@ export class CanvasArticleReader {
       clearTimeout(this._resizeTimeout);
       this._resizeTimeout = setTimeout(() => {
         if (this.currentPost) {
-          this.renderPost(this.currentPost, this.watermarkInfo);
+          this.renderArticle(this.currentPost, this.friendInfo);
         }
       }, 150);
     };
@@ -41,10 +72,47 @@ export class CanvasArticleReader {
     window.removeEventListener('resize', this._onResize);
   }
 
+  getCurrentTheme() {
+    const theme = document.documentElement.getAttribute('data-theme') || 'paper';
+    return this.palettes[theme] || this.palettes.paper;
+  }
+
+  setFontSizeStep(step) {
+    this.sizeStep = Math.max(0, Math.min(3, step));
+    if (this.currentPost) {
+      this.renderArticle(this.currentPost, this.friendInfo);
+    }
+  }
+
+  getSizeScale() {
+    switch (this.sizeStep) {
+      case 0:
+        return { body: 16, title: 30, h1: 26, h2: 22, h3: 18, meta: 13, lhFactor: 1.68 };
+      case 2:
+        return { body: 20, title: 38, h1: 32, h2: 26, h3: 21, meta: 14, lhFactor: 1.76 };
+      case 3:
+        return { body: 22, title: 42, h1: 36, h2: 29, h3: 23, meta: 15, lhFactor: 1.82 };
+      case 1:
+      default:
+        return { body: 18, title: 34, h1: 28, h2: 24, h3: 19, meta: 13.5, lhFactor: 1.72 };
+    }
+  }
+
   /**
-   * Parse Markdown content into structured layout blocks
-   * @param {string} markdown
-   * @returns {Array<object>}
+   * Format watermark timestamp: YYYY-MM-DD HH:MM
+   */
+  getWatermarkTimestamp() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  }
+
+  /**
+   * Parse Markdown into structured blocks
    */
   parseMarkdown(markdown) {
     const lines = markdown.split(/\r?\n/);
@@ -69,7 +137,7 @@ export class CanvasArticleReader {
         continue;
       }
 
-      // Divider (--- or ***)
+      // Dividers
       if (/^(\-{3,}|\*{3,})$/.test(line)) {
         flushParagraph();
         blocks.push({ type: 'divider' });
@@ -93,7 +161,7 @@ export class CanvasArticleReader {
         continue;
       }
 
-      // Blockquote
+      // Blockquotes
       if (line.startsWith('>')) {
         flushParagraph();
         blocks.push({
@@ -103,7 +171,7 @@ export class CanvasArticleReader {
         continue;
       }
 
-      // Bullet lists (- or *)
+      // Bullet items
       if (/^[-*]\s+/.test(line)) {
         flushParagraph();
         blocks.push({
@@ -113,7 +181,6 @@ export class CanvasArticleReader {
         continue;
       }
 
-      // Regular paragraph line
       currentParagraph.push(line);
     }
 
@@ -122,20 +189,7 @@ export class CanvasArticleReader {
   }
 
   /**
-   * Format watermark timestamp: YYYY-MM-DD HH:MM
-   */
-  getWatermarkTimestamp() {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
-  }
-
-  /**
-   * Calculate word-wrapped lines
+   * Word wrap helper
    */
   wrapText(ctx, text, maxWidth) {
     const words = text.split(/\s+/);
@@ -160,303 +214,332 @@ export class CanvasArticleReader {
   }
 
   /**
-   * Render an article to the canvas
-   * @param {object} post - { title, date, tier, summary, content }
-   * @param {object} [watermarkInfo] - { email, name }
+   * Render continuous repeating diagonal watermark on a block canvas
+   * Translates by (0, -offsetY) to maintain global diagonal alignment across chunks
    */
-  renderPost(post, watermarkInfo = {}) {
-    this.currentPost = post;
-    this.watermarkInfo = watermarkInfo;
-
-    const parent = this.canvas.parentElement;
-    const parentWidth = parent ? parent.clientWidth : 780;
-    const cssWidth = Math.min(parentWidth, 780);
-    const paddingX = cssWidth < 480 ? 20 : 36;
-    const contentWidth = cssWidth - (paddingX * 2);
-
-    // Read theme colors from CSS computed style or fallbacks
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-      (!document.documentElement.getAttribute('data-theme') && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-    const colors = isDark ? {
-      bg: '#14171a',
-      text: '#e1e8ed',
-      title: '#f5f8fa',
-      muted: '#8899a6',
-      accent: '#64b5f6',
-      border: '#2a3138',
-      blockquoteBg: '#1c2228',
-      watermark: 'rgba(255, 255, 255, 0.055)',
-      badgeBg: post.tier === 'inner' ? '#3e2723' : '#1e3040',
-      badgeText: post.tier === 'inner' ? '#ffab91' : '#81d4fa'
-    } : {
-      bg: '#ffffff',
-      text: '#2c3e50',
-      title: '#1a252f',
-      muted: '#7f8c8d',
-      accent: '#2980b9',
-      border: '#ecf0f1',
-      blockquoteBg: '#f8f9fa',
-      watermark: 'rgba(0, 0, 0, 0.055)',
-      badgeBg: post.tier === 'inner' ? '#fbe9e7' : '#e1f5fe',
-      badgeText: post.tier === 'inner' ? '#d84315' : '#0277bd'
-    };
-
-    const blocks = this.parseMarkdown(post.content || '');
-
-    // Measure layout pass to compute exact required height
-    let totalHeight = 50; // top padding
-
-    // Title measurement
-    totalHeight += 44; // Title approx height
-    totalHeight += 24; // Meta line (date, tier)
-    totalHeight += 30; // Divider
-
-    // Measure blocks
-    // Temporary measurement canvas context
-    const measureCanvas = document.createElement('canvas');
-    const mCtx = measureCanvas.getContext('2d');
-
-    const layoutBlocks = [];
-
-    for (const block of blocks) {
-      if (block.type === 'h1') {
-        mCtx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, sans-serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth);
-        layoutBlocks.push({ ...block, lines, lineHeight: 32, font: mCtx.font });
-        totalHeight += lines.length * 32 + 20;
-      } else if (block.type === 'h2') {
-        mCtx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, sans-serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth);
-        layoutBlocks.push({ ...block, lines, lineHeight: 28, font: mCtx.font });
-        totalHeight += lines.length * 28 + 18;
-      } else if (block.type === 'h3') {
-        mCtx.font = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, sans-serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth);
-        layoutBlocks.push({ ...block, lines, lineHeight: 24, font: mCtx.font });
-        totalHeight += lines.length * 24 + 14;
-      } else if (block.type === 'paragraph') {
-        mCtx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth);
-        layoutBlocks.push({ ...block, lines, lineHeight: 26, font: mCtx.font });
-        totalHeight += lines.length * 26 + 18;
-      } else if (block.type === 'blockquote') {
-        mCtx.font = 'italic 16px Georgia, serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth - 36);
-        layoutBlocks.push({ ...block, lines, lineHeight: 26, font: mCtx.font });
-        totalHeight += lines.length * 26 + 28;
-      } else if (block.type === 'bullet') {
-        mCtx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        const lines = this.wrapText(mCtx, block.text, contentWidth - 28);
-        layoutBlocks.push({ ...block, lines, lineHeight: 25, font: mCtx.font });
-        totalHeight += lines.length * 25 + 10;
-      } else if (block.type === 'divider') {
-        layoutBlocks.push({ ...block });
-        totalHeight += 36;
-      }
-    }
-
-    totalHeight += 60; // bottom padding
-
-    // Setup high-DPI canvas
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.floor(cssWidth * dpr);
-    this.canvas.height = Math.floor(totalHeight * dpr);
-    this.canvas.style.width = `${cssWidth}px`;
-    this.canvas.style.height = `${totalHeight}px`;
-
-    const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-    ctx.scale(dpr, dpr);
-
-    // 1. Draw Background
-    ctx.fillStyle = colors.bg;
-    ctx.fillRect(0, 0, cssWidth, totalHeight);
-
-    // 2. Render Article Header
-    let currentY = 50;
-
-    // Article Title
-    ctx.fillStyle = colors.title;
-    ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif';
-    const titleLines = this.wrapText(ctx, post.title || 'Untitled', contentWidth);
-    for (const line of titleLines) {
-      ctx.fillText(line, paddingX, currentY);
-      currentY += 36;
-    }
-
-    currentY += 4;
-
-    // Meta: Date + Tier Badge
-    ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillStyle = colors.muted;
-    const dateStr = post.date || '';
-    ctx.fillText(dateStr, paddingX, currentY);
-
-    const dateWidth = ctx.measureText(dateStr).width;
-    const badgeX = paddingX + dateWidth + 14;
-    const tierText = (post.tier || 'general').toUpperCase();
-
-    // Badge pill
-    const badgeTextWidth = ctx.measureText(tierText).width;
-    const badgeW = badgeTextWidth + 16;
-    const badgeH = 22;
-    const badgeY = currentY - 15;
-
-    ctx.fillStyle = colors.badgeBg;
-    ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 11) : ctx.rect(badgeX, badgeY, badgeW, badgeH);
-    ctx.fill();
-
-    ctx.fillStyle = colors.badgeText;
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(tierText, badgeX + 8, currentY - 1);
-
-    currentY += 20;
-
-    // Subtle header line divider
-    ctx.strokeStyle = colors.border;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(paddingX, currentY);
-    ctx.lineTo(paddingX + contentWidth, currentY);
-    ctx.stroke();
-
-    currentY += 32;
-
-    // 3. Render Markdown Blocks
-    for (const block of layoutBlocks) {
-      if (block.type === 'h1' || block.type === 'h2' || block.type === 'h3') {
-        ctx.fillStyle = colors.title;
-        ctx.font = block.font;
-        for (const line of block.lines) {
-          ctx.fillText(line, paddingX, currentY);
-          currentY += block.lineHeight;
-        }
-        currentY += block.type === 'h1' ? 16 : 12;
-      } else if (block.type === 'paragraph') {
-        ctx.fillStyle = colors.text;
-        ctx.font = block.font;
-        for (const line of block.lines) {
-          // Check for bold emphasis in paragraph line
-          this.renderFormattedLine(ctx, line, paddingX, currentY, colors.text, block.font);
-          currentY += block.lineHeight;
-        }
-        currentY += 14;
-      } else if (block.type === 'blockquote') {
-        const blockStartY = currentY - 14;
-        const blockquoteH = block.lines.length * block.lineHeight + 14;
-
-        // Blockquote background
-        ctx.fillStyle = colors.blockquoteBg;
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(paddingX, blockStartY, contentWidth, blockquoteH, 6);
-        } else {
-          ctx.rect(paddingX, blockStartY, contentWidth, blockquoteH);
-        }
-        ctx.fill();
-
-        // Left accent bar
-        ctx.fillStyle = colors.accent;
-        ctx.fillRect(paddingX, blockStartY, 4, blockquoteH);
-
-        // Text
-        ctx.fillStyle = colors.muted;
-        ctx.font = block.font;
-        for (const line of block.lines) {
-          ctx.fillText(line, paddingX + 20, currentY);
-          currentY += block.lineHeight;
-        }
-        currentY += 20;
-      } else if (block.type === 'bullet') {
-        ctx.fillStyle = colors.text;
-        ctx.font = block.font;
-        // Bullet point dot
-        ctx.fillStyle = colors.accent;
-        ctx.beginPath();
-        ctx.arc(paddingX + 8, currentY - 5, 3, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = colors.text;
-        for (let idx = 0; idx < block.lines.length; idx++) {
-          const line = block.lines[idx];
-          ctx.fillText(line, paddingX + 22, currentY);
-          currentY += block.lineHeight;
-        }
-        currentY += 6;
-      } else if (block.type === 'divider') {
-        currentY += 10;
-        ctx.strokeStyle = colors.border;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(paddingX + 40, currentY);
-        ctx.lineTo(paddingX + contentWidth - 40, currentY);
-        ctx.stroke();
-        currentY += 24;
-      }
-    }
-
-    // 4. Render Forensic Watermark Layer
-    // Repeated diagonal watermark across the canvas
-    const email = (watermarkInfo && watermarkInfo.email) || 'confidential';
-    const watermarkText = `${email} • ${this.getWatermarkTimestamp()}`;
-
-    this.renderForensicWatermark(ctx, cssWidth, totalHeight, watermarkText, colors.watermark);
-  }
-
-  /**
-   * Helper to render inline formatting (bold / plain)
-   */
-  renderFormattedLine(ctx, line, startX, y, defaultColor, baseFont) {
-    if (!line.includes('**')) {
-      ctx.fillText(line, startX, y);
-      return;
-    }
-
-    const parts = line.split(/(\*\*.*?\*\*)/g);
-    let curX = startX;
-
-    for (const part of parts) {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        const text = part.slice(2, -2);
-        ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif';
-        ctx.fillText(text, curX, y);
-        curX += ctx.measureText(text).width;
-        ctx.font = baseFont;
-      } else if (part) {
-        ctx.fillText(part, curX, y);
-        curX += ctx.measureText(part).width;
-      }
-    }
-  }
-
-  /**
-   * Render faint diagonal repeating forensic watermark
-   */
-  renderForensicWatermark(ctx, width, height, text, color) {
+  drawWatermark(ctx, width, height, offsetY, watermarkText, color) {
     ctx.save();
     ctx.fillStyle = color;
-    ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
+    ctx.font = '12.5px "Inter", -apple-system, BlinkMacSystemFont, sans-serif';
 
     const angle = -25 * (Math.PI / 180);
-    const stepX = 280;
-    const stepY = 160;
+    const stepX = 260;
+    const stepY = 150;
 
-    // Expand bounds to cover rotation
-    const diag = Math.sqrt(width * width + height * height);
+    // Shift context so coordinate (0, 0) is the top of the entire article
+    ctx.translate(0, -offsetY);
 
-    ctx.translate(width / 2, height / 2);
+    // Apply rotation centered on article column width
+    ctx.translate(width / 2, 0);
     ctx.rotate(angle);
-    ctx.translate(-diag / 2, -diag / 2);
+    ctx.translate(-width / 2, 0);
 
-    for (let y = 0; y < diag; y += stepY) {
-      const offsetX = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
-      for (let x = -stepX; x < diag + stepX; x += stepX) {
-        ctx.fillText(text, x + offsetX, y);
+    // Grid coordinates spanning above and below current block
+    const startY = Math.floor((offsetY - 400) / stepY) * stepY;
+    const endY = offsetY + height + 400;
+
+    for (let y = startY; y < endY; y += stepY) {
+      const rowOffset = (Math.floor(y / stepY) % 2 === 0) ? 0 : stepX / 2;
+      for (let x = -width; x < width * 2; x += stepX) {
+        ctx.fillText(watermarkText, x + rowOffset, y);
       }
     }
 
     ctx.restore();
+  }
+
+  /**
+   * Render inline formatting (bold / italic)
+   */
+  drawInlineText(ctx, line, startX, y, baseFont, boldFont, italicFont, defaultColor) {
+    // Regex for bold **text** or italic *text*
+    if (!line.includes('*')) {
+      ctx.fillText(line, startX, y);
+      return;
+    }
+
+    const regex = /(\*\*.*?\*\*|\*.*?\*)/g;
+    const tokens = line.split(regex);
+    let curX = startX;
+
+    for (const token of tokens) {
+      if (!token) continue;
+
+      if (token.startsWith('**') && token.endsWith('**')) {
+        const text = token.slice(2, -2);
+        ctx.font = boldFont;
+        ctx.fillStyle = defaultColor;
+        ctx.fillText(text, curX, y);
+        curX += ctx.measureText(text).width;
+      } else if (token.startsWith('*') && token.endsWith('*')) {
+        const text = token.slice(1, -1);
+        ctx.font = italicFont;
+        ctx.fillStyle = defaultColor;
+        ctx.fillText(text, curX, y);
+        curX += ctx.measureText(text).width;
+      } else {
+        ctx.font = baseFont;
+        ctx.fillStyle = defaultColor;
+        ctx.fillText(token, curX, y);
+        curX += ctx.measureText(token).width;
+      }
+    }
+  }
+
+  /**
+   * Main render function: parses article, creates tightly sized canvas per block,
+   * measures with font readiness, and mounts sequentially into container.
+   */
+  async renderArticle(post, friendInfo = {}) {
+    this.currentPost = post;
+    this.friendInfo = friendInfo;
+
+    // Ensure custom fonts are ready before measurement
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+
+    const container = this.container;
+    container.innerHTML = '';
+
+    const palette = this.getCurrentTheme();
+    const scale = this.getSizeScale();
+
+    // Determine article column width (constrained to max 650px)
+    const availWidth = container.clientWidth || 650;
+    const cssWidth = Math.min(availWidth, 650);
+    const paddingX = cssWidth < 480 ? 18 : 28;
+    const contentWidth = cssWidth - (paddingX * 2);
+
+    const dpr = window.devicePixelRatio || 1;
+    const email = friendInfo.email || 'private';
+    const watermarkText = `${email} • ${this.getWatermarkTimestamp()}`;
+
+    // Measurement canvas
+    const measureCanvas = document.createElement('canvas');
+    const mCtx = measureCanvas.getContext('2d');
+
+    // Font definitions
+    const serifFamily = '"Newsreader", "Source Serif 4", Georgia, serif';
+    const sansFamily = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+
+    const fonts = {
+      title: `600 ${scale.title}px ${serifFamily}`,
+      meta: `500 ${scale.meta}px ${sansFamily}`,
+      h1: `600 ${scale.h1}px ${serifFamily}`,
+      h2: `600 ${scale.h2}px ${serifFamily}`,
+      h3: `600 ${scale.h3}px ${serifFamily}`,
+      body: `400 ${scale.body}px ${serifFamily}`,
+      bodyBold: `600 ${scale.body}px ${serifFamily}`,
+      bodyItalic: `italic 400 ${scale.body}px ${serifFamily}`,
+      quote: `italic 400 ${scale.body}px ${serifFamily}`,
+      bullet: `400 ${scale.body}px ${serifFamily}`,
+      footer: `italic 400 ${scale.meta}px ${serifFamily}`
+    };
+
+    let accumulatedOffsetY = 0;
+
+    // Helper: create and configure a canvas chunk
+    const createChunkCanvas = (cssHeight, drawFn) => {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'reader-canvas-block';
+      canvas.width = Math.floor(cssWidth * dpr);
+      canvas.height = Math.floor(cssHeight * dpr);
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+
+      // Copy-protection styling & events
+      canvas.style.userSelect = 'none';
+      canvas.style.webkitUserSelect = 'none';
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+      canvas.addEventListener('selectstart', e => e.preventDefault());
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // 1. Draw block background
+      ctx.fillStyle = palette.bg;
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+      // 2. Continuous Watermark aligned with global accumulatedOffsetY
+      this.drawWatermark(ctx, cssWidth, cssHeight, accumulatedOffsetY, watermarkText, palette.watermark);
+
+      // 3. Draw content
+      drawFn(ctx);
+
+      container.appendChild(canvas);
+      accumulatedOffsetY += cssHeight;
+    };
+
+    // ==========================================
+    // BLOCK 1: ARTICLE HEADER (Date + Title)
+    // ==========================================
+    mCtx.font = fonts.title;
+    const titleLines = this.wrapText(mCtx, post.title || 'Untitled', contentWidth);
+    const titleLineHeight = Math.round(scale.title * 1.25);
+    const headerHeight = 36 + 24 + (titleLines.length * titleLineHeight) + 24;
+
+    createChunkCanvas(headerHeight, ctx => {
+      let y = 32;
+
+      // Date in understated sans-serif
+      ctx.font = fonts.meta;
+      ctx.fillStyle = palette.muted;
+      ctx.fillText(post.date || '', paddingX, y);
+      y += 24;
+
+      // Title in warm serif
+      ctx.font = fonts.title;
+      ctx.fillStyle = palette.ink;
+      for (const line of titleLines) {
+        ctx.fillText(line, paddingX, y);
+        y += titleLineHeight;
+      }
+    });
+
+    // ==========================================
+    // CONTENT BLOCKS
+    // ==========================================
+    const rawBlocks = this.parseMarkdown(post.content || '');
+
+    for (const block of rawBlocks) {
+      if (block.type === 'h1' || block.type === 'h2' || block.type === 'h3') {
+        const font = fonts[block.type];
+        const fontSize = scale[block.type];
+        const lineHeight = Math.round(fontSize * 1.3);
+
+        mCtx.font = font;
+        const lines = this.wrapText(mCtx, block.text, contentWidth);
+        const topMargin = block.type === 'h1' ? 32 : (block.type === 'h2' ? 26 : 20);
+        const bottomMargin = 12;
+        const blockHeight = topMargin + (lines.length * lineHeight) + bottomMargin;
+
+        createChunkCanvas(blockHeight, ctx => {
+          ctx.font = font;
+          ctx.fillStyle = palette.ink;
+          let y = topMargin;
+          for (const line of lines) {
+            ctx.fillText(line, paddingX, y);
+            y += lineHeight;
+          }
+        });
+
+      } else if (block.type === 'paragraph') {
+        const lineHeight = Math.round(scale.body * scale.lhFactor);
+        mCtx.font = fonts.body;
+        const lines = this.wrapText(mCtx, block.text, contentWidth);
+        const blockHeight = (lines.length * lineHeight) + 20;
+
+        createChunkCanvas(blockHeight, ctx => {
+          ctx.font = fonts.body;
+          ctx.fillStyle = palette.ink;
+          let y = scale.body;
+          for (const line of lines) {
+            this.drawInlineText(
+              ctx,
+              line,
+              paddingX,
+              y,
+              fonts.body,
+              fonts.bodyBold,
+              fonts.bodyItalic,
+              palette.ink
+            );
+            y += lineHeight;
+          }
+        });
+
+      } else if (block.type === 'blockquote') {
+        const lineHeight = Math.round(scale.body * scale.lhFactor);
+        const quoteInnerWidth = contentWidth - 36;
+        mCtx.font = fonts.quote;
+        const lines = this.wrapText(mCtx, block.text, quoteInnerWidth);
+        const blockHeight = (lines.length * lineHeight) + 32;
+
+        createChunkCanvas(blockHeight, ctx => {
+          const bgStartY = 6;
+          const bgHeight = blockHeight - 12;
+
+          // Subtle tinted card background
+          ctx.fillStyle = palette.card;
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(paddingX, bgStartY, contentWidth, bgHeight, 4);
+          } else {
+            ctx.rect(paddingX, bgStartY, contentWidth, bgHeight);
+          }
+          ctx.fill();
+
+          // Left accent border bar
+          ctx.fillStyle = palette.accent;
+          ctx.fillRect(paddingX, bgStartY, 3, bgHeight);
+
+          // Quote text
+          ctx.font = fonts.quote;
+          ctx.fillStyle = palette.muted;
+          let y = bgStartY + 20;
+          for (const line of lines) {
+            ctx.fillText(line, paddingX + 22, y);
+            y += lineHeight;
+          }
+        });
+
+      } else if (block.type === 'bullet') {
+        const lineHeight = Math.round(scale.body * scale.lhFactor);
+        const bulletTextWidth = contentWidth - 26;
+        mCtx.font = fonts.bullet;
+        const lines = this.wrapText(mCtx, block.text, bulletTextWidth);
+        const blockHeight = (lines.length * lineHeight) + 12;
+
+        createChunkCanvas(blockHeight, ctx => {
+          // Bullet dot
+          ctx.fillStyle = palette.accent;
+          ctx.beginPath();
+          ctx.arc(paddingX + 6, scale.body - 4, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = fonts.bullet;
+          ctx.fillStyle = palette.ink;
+          let y = scale.body;
+          for (const line of lines) {
+            this.drawInlineText(
+              ctx,
+              line,
+              paddingX + 22,
+              y,
+              fonts.bullet,
+              fonts.bodyBold,
+              fonts.bodyItalic,
+              palette.ink
+            );
+            y += lineHeight;
+          }
+        });
+
+      } else if (block.type === 'divider') {
+        const blockHeight = 44;
+        createChunkCanvas(blockHeight, ctx => {
+          ctx.strokeStyle = palette.border;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(paddingX + 60, 22);
+          ctx.lineTo(paddingX + contentWidth - 60, 22);
+          ctx.stroke();
+        });
+      }
+    }
+
+    // ==========================================
+    // ARTICLE FOOTER: Warm personal attribution
+    // ==========================================
+    const footerHeight = 70;
+    const friendName = friendInfo.name || 'Friend';
+    createChunkCanvas(footerHeight, ctx => {
+      ctx.font = fonts.footer;
+      ctx.fillStyle = palette.muted;
+      ctx.textAlign = 'center';
+      ctx.fillText(`Shared privately with ${friendName}.`, cssWidth / 2, 40);
+      ctx.textAlign = 'left';
+    });
   }
 }
