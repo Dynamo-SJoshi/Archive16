@@ -246,10 +246,19 @@ function switchView(target) {
   viewFeed.classList.remove('active');
   viewReader.classList.remove('active');
 
-  if (target === 'gate1') viewGate1.classList.add('active');
-  else if (target === 'gate2') viewGate2.classList.add('active');
-  else if (target === 'feed') viewFeed.classList.add('active');
-  else if (target === 'reader') viewReader.classList.add('active');
+  if (target === 'gate1') {
+    viewGate1.classList.add('active');
+    document.body.classList.add('auth-view');
+  } else if (target === 'gate2') {
+    viewGate2.classList.add('active');
+    document.body.classList.add('auth-view');
+  } else if (target === 'feed') {
+    viewFeed.classList.add('active');
+    document.body.classList.remove('auth-view');
+  } else if (target === 'reader') {
+    viewReader.classList.add('active');
+    document.body.classList.remove('auth-view');
+  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }

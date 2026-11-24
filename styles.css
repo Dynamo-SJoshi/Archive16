@@ -76,6 +76,70 @@ body {
   margin: 0;
 }
 
+/* Responsive Login Background (Laptop vs Mobile) */
+body.auth-view {
+  background-color: var(--bg);
+  background-image: url('bg-laptop.png');
+  background-size: cover;
+  background-position: center left;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  body.auth-view {
+    background-image: url('bg-mobile.png');
+    background-position: center center;
+    background-attachment: scroll;
+  }
+}
+
+/* Theme overlays on login background */
+html[data-theme="dark"] body.auth-view,
+[data-theme="dark"] body.auth-view {
+  background-image: linear-gradient(rgba(22, 21, 19, 0.78), rgba(22, 21, 19, 0.78)), url('bg-laptop.png');
+}
+
+@media (max-width: 768px) {
+  html[data-theme="dark"] body.auth-view,
+  [data-theme="dark"] body.auth-view {
+    background-image: linear-gradient(rgba(22, 21, 19, 0.78), rgba(22, 21, 19, 0.78)), url('bg-mobile.png');
+  }
+}
+
+html[data-theme="sepia"] body.auth-view,
+[data-theme="sepia"] body.auth-view {
+  background-image: linear-gradient(rgba(243, 235, 216, 0.25), rgba(243, 235, 216, 0.25)), url('bg-laptop.png');
+}
+
+@media (max-width: 768px) {
+  html[data-theme="sepia"] body.auth-view,
+  [data-theme="sepia"] body.auth-view {
+    background-image: linear-gradient(rgba(243, 235, 216, 0.25), rgba(243, 235, 216, 0.25)), url('bg-mobile.png');
+  }
+}
+
+/* Floating card on login page */
+body.auth-view .quiet-card {
+  background: rgba(242, 238, 231, 0.90);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(229, 223, 213, 0.85);
+  box-shadow: 0 12px 35px rgba(31, 30, 28, 0.08);
+}
+
+html[data-theme="sepia"] body.auth-view .quiet-card {
+  background: rgba(234, 224, 201, 0.92);
+  border: 1px solid rgba(223, 211, 186, 0.85);
+}
+
+html[data-theme="dark"] body.auth-view .quiet-card {
+  background: rgba(31, 29, 26, 0.90);
+  border: 1px solid rgba(45, 42, 38, 0.85);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+}
+
 /* UI typography for labels, buttons, dates */
 .ui-text,
 button,
