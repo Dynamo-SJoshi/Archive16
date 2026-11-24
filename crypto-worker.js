@@ -1,6 +1,6 @@
 /**
  * crypto-worker.js - Dedicated Web Worker for Non-Blocking Web Crypto Operations
- * Handles 210,000 PBKDF2 iterations and Shamir share decryption off the main thread.
+ * Handles 210,000 PBKDF2 iterations, multi-answer share matching, and Shamir reconstruction off the main thread.
  */
 
 import {
@@ -18,14 +18,13 @@ self.onmessage = async function (e) {
   const { type, payload, id } = e.data;
 
   try {
-    if (type === 'DECRYPT_QUESTIONS') {
-      const { groupPassphrase, questionsEnc } = payload;
-      const normPass = normalizeAnswer(groupPassphrase);
-      const qKey = await deriveKeyPBKDF2(normPass, questionsEnc.salt, 210000);
+    if (type === 'DECRYPT_FRIEND_QUESTIONS') {
+      const { token, questionsEnc } = payload;
+      const qKey = await deriveKeyPBKDF2(token, questionsEnc.salt, 210000);
       const plainStr = await tryDecryptAESGCMString(qKey, questionsEnc.iv, questionsEnc.ciphertext);
 
       if (!plainStr) {
-        self.postMessage({ id, success: false, error: 'INVALID_PASSPHRASE' });
+        self.postMessage({ id, success: false, error: 'INVALID_TOKEN' });
         return;
       }
 
@@ -33,30 +32,49 @@ self.onmessage = async function (e) {
       self.postMessage({ id, success: true, data: quizData });
 
     } else if (type === 'VERIFY_AND_UNLOCK') {
-      const { answers, sharesJson, keysJson, postsEnc, token, threshold } = payload;
+      const { answers, shares, envelopeEnc, postsEnc, token, threshold } = payload;
 
-      // 1. Decrypt shares
-      const validShares = [];
+      // Group shares by questionId for fast multi-answer matching
+      const sharesByQ = new Map();
+      for (const s of shares) {
+        if (!sharesByQ.has(s.questionId)) {
+          sharesByQ.set(s.questionId, []);
+        }
+        sharesByQ.get(s.questionId).push(s);
+      }
+
+      // Map to store recovered share per question (keyed by questionId)
+      const validSharesMap = new Map();
+
       for (const item of answers) {
         if (!item.val || !item.val.trim()) continue;
-        const shareRecord = sharesJson.find(s => s.questionId === item.id);
-        if (!shareRecord) continue;
+        const matchingShares = sharesByQ.get(item.id);
+        if (!matchingShares || matchingShares.length === 0) continue;
 
         const normAns = normalizeAnswer(item.val);
-        const shareKey = await deriveKeyPBKDF2(normAns, shareRecord.salt, 210000);
-        const decryptedShareStr = await tryDecryptAESGCMString(shareKey, shareRecord.iv, shareRecord.ciphertext);
 
-        if (decryptedShareStr) {
-          try {
-            const shareObj = JSON.parse(decryptedShareStr);
-            validShares.push(shareObj);
-          } catch {
-            // invalid json
+        // Attempt decrypting against each share record for this question until one matches
+        for (const sRecord of matchingShares) {
+          const shareKey = await deriveKeyPBKDF2(normAns, sRecord.salt, 210000);
+          const decryptedShareStr = await tryDecryptAESGCMString(shareKey, sRecord.iv, sRecord.ciphertext);
+
+          if (decryptedShareStr) {
+            try {
+              const shareObj = JSON.parse(decryptedShareStr);
+              if (shareObj && typeof shareObj.x === 'number' && shareObj.y) {
+                validSharesMap.set(item.id, shareObj);
+                break; // Found valid share for this question, stop testing other alternates
+              }
+            } catch {
+              // Invalid json, keep checking
+            }
           }
         }
       }
 
-      // 2. Check threshold
+      const validShares = Array.from(validSharesMap.values());
+
+      // Check threshold (K=4)
       if (validShares.length < threshold) {
         self.postMessage({
           id,
@@ -67,29 +85,16 @@ self.onmessage = async function (e) {
         return;
       }
 
-      // 3. Reconstruct QuizMasterKey
-      const masterKeyBytes = combineShares(validShares.slice(0, threshold));
-      const masterKeyHex = bytesToHex(masterKeyBytes);
+      // Reconstruct FriendKey via Shamir's Secret Sharing (threshold shares)
+      const friendKeyBytes = combineShares(validShares.slice(0, threshold));
+      const friendKeyHex = bytesToHex(friendKeyBytes);
 
-      // 4. Look up friend envelope
-      const lookupId = await sha256Hex(`friend:${token}`);
-      const friendEnvelope = keysJson[lookupId];
+      // Unwrap envelopeEnc with PBKDF2(FriendKey + ":" + token)
+      const envWrapPass = `${friendKeyHex}:${token}`;
+      const envWrapKey = await deriveKeyPBKDF2(envWrapPass, envelopeEnc.salt, 210000);
+      const envelopeStr = await tryDecryptAESGCMString(envWrapKey, envelopeEnc.iv, envelopeEnc.ciphertext);
 
-      if (!friendEnvelope) {
-        self.postMessage({
-          id,
-          success: false,
-          error: 'REVOKED_OR_UNKNOWN_TOKEN'
-        });
-        return;
-      }
-
-      // 5. Unwrap envelope
-      const friendWrapPass = `${masterKeyHex}:${token}`;
-      const friendWrapKey = await deriveKeyPBKDF2(friendWrapPass, friendEnvelope.salt, 210000);
-      const friendPayloadStr = await tryDecryptAESGCMString(friendWrapKey, friendEnvelope.iv, friendEnvelope.ciphertext);
-
-      if (!friendPayloadStr) {
+      if (!envelopeStr) {
         self.postMessage({
           id,
           success: false,
@@ -98,9 +103,9 @@ self.onmessage = async function (e) {
         return;
       }
 
-      const friendPayload = JSON.parse(friendPayloadStr);
+      const friendPayload = JSON.parse(envelopeStr);
 
-      // 6. Decrypt all allowed tiers and seamlessly merge into a single feed
+      // Decrypt posts for allowed tiers
       const allPosts = [];
       const allowedTiers = Array.isArray(friendPayload.tiers) ? friendPayload.tiers : ['general'];
 
@@ -118,7 +123,6 @@ self.onmessage = async function (e) {
         }
       }
 
-      // Sort newest-first
       allPosts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
       self.postMessage({

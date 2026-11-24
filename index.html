@@ -30,15 +30,9 @@
         <div id="gate1Alert" class="gentle-alert"></div>
 
         <form id="gate1Form">
-          <div class="form-group">
-            <label class="form-label" for="passphraseInput">Passphrase</label>
-            <input type="password" id="passphraseInput" class="form-input" placeholder="Shared passphrase..." required autocomplete="current-password">
-          </div>
-
-          <!-- Rendered only if no #token=... was found in the URL -->
-          <div class="form-group" id="inviteTokenGroup" style="display: none;">
+          <div class="form-group" id="inviteTokenGroup">
             <label class="form-label" for="tokenInput">Personal invite code</label>
-            <input type="text" id="tokenInput" class="form-input" placeholder="e.g. tok_..." autocomplete="off">
+            <input type="text" id="tokenInput" class="form-input" placeholder="e.g. tok_..." required autocomplete="off">
           </div>
 
           <button type="submit" id="gate1SubmitBtn" class="btn-primary ui-text">
@@ -53,8 +47,8 @@
          ========================================== -->
     <section id="viewGate2" class="view-panel">
       <header class="letter-header">
-        <h1 class="site-title">Shared Memories</h1>
-        <p id="quizInstructionText" class="site-intro">Answer at least 3 of these to step in.</p>
+        <h1 class="site-title">ARCHIVE16</h1>
+        <p id="quizInstructionText" class="site-intro">Answer at least 4 of these 5 to step in.</p>
       </header>
 
       <div class="quiet-card">
