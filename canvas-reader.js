@@ -33,7 +33,7 @@ export class BlockCanvasReader {
         muted: '#6E6A63',
         border: '#E5DFD5',
         accent: '#5B7065',
-        watermark: 'rgba(31, 30, 28, 0.05)'
+        watermark: 'rgba(31, 30, 28, 0.18)'
       },
       sepia: {
         bg: '#F3EBD8',
@@ -42,7 +42,7 @@ export class BlockCanvasReader {
         muted: '#706354',
         border: '#DFD3BA',
         accent: '#8C5A3C',
-        watermark: 'rgba(44, 36, 27, 0.05)'
+        watermark: 'rgba(44, 36, 27, 0.20)'
       },
       dark: {
         bg: '#161513',
@@ -51,7 +51,7 @@ export class BlockCanvasReader {
         muted: '#9A9389',
         border: '#2D2A26',
         accent: '#8AA697',
-        watermark: 'rgba(232, 228, 220, 0.05)'
+        watermark: 'rgba(232, 228, 220, 0.20)'
       }
     };
 
@@ -220,11 +220,11 @@ export class BlockCanvasReader {
   drawWatermark(ctx, width, height, offsetY, watermarkText, color) {
     ctx.save();
     ctx.fillStyle = color;
-    ctx.font = '12.5px "Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.font = '600 16px "Inter", -apple-system, BlinkMacSystemFont, sans-serif';
 
     const angle = -25 * (Math.PI / 180);
-    const stepX = 260;
-    const stepY = 150;
+    const stepX = 320;
+    const stepY = 130;
 
     // Shift context so coordinate (0, 0) is the top of the entire article
     ctx.translate(0, -offsetY);
@@ -361,11 +361,11 @@ export class BlockCanvasReader {
       ctx.fillStyle = palette.bg;
       ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-      // 2. Continuous Watermark aligned with global accumulatedOffsetY
-      this.drawWatermark(ctx, cssWidth, cssHeight, accumulatedOffsetY, watermarkText, palette.watermark);
-
-      // 3. Draw content
+      // 2. Draw content
       drawFn(ctx);
+
+      // 3. Continuous Watermark aligned with global accumulatedOffsetY (clearly visible overlay)
+      this.drawWatermark(ctx, cssWidth, cssHeight, accumulatedOffsetY, watermarkText, palette.watermark);
 
       container.appendChild(canvas);
       accumulatedOffsetY += cssHeight;
