@@ -446,8 +446,14 @@ function renderFeedView() {
     card.setAttribute('role', 'button');
     card.setAttribute('tabindex', '0');
 
+    const isInner = (post.tier === 'inner');
+    const innerTagHtml = isInner ? `<span class="inner-circle-tag">Inner Circle</span>` : '';
+
     card.innerHTML = `
-      <div class="post-card-date ui-text">${escapeHtml(post.date || '')}</div>
+      <div class="post-card-meta ui-text">
+        <span class="post-card-date">${escapeHtml(post.date || '')}</span>
+        ${innerTagHtml}
+      </div>
       <h2 class="post-card-title">${escapeHtml(post.title || 'Untitled')}</h2>
       ${post.summary ? `<p class="post-card-summary">${escapeHtml(post.summary)}</p>` : ''}
     `;

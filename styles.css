@@ -320,12 +320,32 @@ label,
   background: var(--surface);
 }
 
+.post-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+
 .post-card-date {
   font-size: 0.8rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 0.4rem;
+}
+
+.inner-circle-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  line-height: 1.4;
 }
 
 .post-card-title {

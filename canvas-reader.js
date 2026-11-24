@@ -372,23 +372,60 @@ export class BlockCanvasReader {
     };
 
     // ==========================================
-    // BLOCK 1: ARTICLE HEADER (Date + Title)
+    // BLOCK 1: ARTICLE HEADER (Date + Inner Circle Tag + Title)
     // ==========================================
     mCtx.font = fonts.title;
     const titleLines = this.wrapText(mCtx, post.title || 'Untitled', contentWidth);
-    const titleLineHeight = Math.round(scale.title * 1.25);
-    const headerHeight = 36 + 24 + (titleLines.length * titleLineHeight) + 24;
+    const titleLineHeight = Math.round(scale.title * 1.3);
+    const isInner = (post.tier === 'inner');
+
+    const headerTopPadding = 38;
+    const metaToTitleGap = 44; // Generous whitespace so date and title never merge
+    const headerBottomPadding = 24;
+    const headerHeight = headerTopPadding + metaToTitleGap + (titleLines.length * titleLineHeight) + headerBottomPadding;
 
     createChunkCanvas(headerHeight, ctx => {
-      let y = 32;
+      let y = headerTopPadding;
 
-      // Date in understated sans-serif
+      // 1. Date in understated sans-serif
       ctx.font = fonts.meta;
       ctx.fillStyle = palette.muted;
-      ctx.fillText(post.date || '', paddingX, y);
-      y += 24;
+      const dateText = post.date || '';
+      ctx.fillText(dateText, paddingX, y);
 
-      // Title in warm serif
+      // 2. Inner Circle Tag
+      if (isInner) {
+        const dateWidth = ctx.measureText(dateText).width;
+        const tagText = 'Inner Circle';
+        ctx.font = '600 11px "Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+        const tagTextWidth = ctx.measureText(tagText).width;
+
+        const tagX = paddingX + (dateText ? dateWidth + 14 : 0);
+        const tagH = 20;
+        const tagW = tagTextWidth + 14;
+        const tagY = y - 14;
+
+        // Pill container
+        ctx.fillStyle = palette.card;
+        ctx.strokeStyle = palette.border;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(tagX, tagY, tagW, tagH, 4);
+        } else {
+          ctx.rect(tagX, tagY, tagW, tagH);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        // Tag label
+        ctx.fillStyle = palette.accent;
+        ctx.fillText(tagText, tagX + 7, y - 1);
+      }
+
+      // 3. Title in warm serif with ample vertical gap
+      y += metaToTitleGap;
+
       ctx.font = fonts.title;
       ctx.fillStyle = palette.ink;
       for (const line of titleLines) {
