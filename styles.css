@@ -1,0 +1,618 @@
+/* ==========================================================================
+   Warm Editorial Minimalism - Design System & Themes
+   Feels like opening a quiet personal letter or physical notebook.
+   ========================================================================== */
+
+/* 1. Theme Variables */
+:root,
+[data-theme="paper"] {
+  --bg: #FAF8F5;
+  --surface: #F2EEE7;
+  --surface-hover: #EBE5DB;
+  --ink: #1F1E1C;
+  --muted: #6E6A63;
+  --border: #E5DFD5;
+  --border-focus: #5B7065;
+  --accent: #5B7065;
+  --accent-hover: #485950;
+  --shadow: 0 4px 20px rgba(31, 30, 28, 0.04);
+  --curtain-bg: rgba(250, 248, 245, 0.85);
+  --curtain-text: #1F1E1C;
+}
+
+[data-theme="sepia"] {
+  --bg: #F3EBD8;
+  --surface: #EAE0C9;
+  --surface-hover: #E1D5BA;
+  --ink: #2C241B;
+  --muted: #706354;
+  --border: #DFD3BA;
+  --border-focus: #8C5A3C;
+  --accent: #8C5A3C;
+  --accent-hover: #734930;
+  --shadow: 0 4px 20px rgba(44, 36, 27, 0.05);
+  --curtain-bg: rgba(243, 235, 216, 0.88);
+  --curtain-text: #2C241B;
+}
+
+[data-theme="dark"] {
+  --bg: #161513;
+  --surface: #1F1D1A;
+  --surface-hover: #292622;
+  --ink: #E8E4DC;
+  --muted: #9A9389;
+  --border: #2D2A26;
+  --border-focus: #8AA697;
+  --accent: #8AA697;
+  --accent-hover: #A1BDAD;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --curtain-bg: rgba(22, 21, 19, 0.88);
+  --curtain-text: #E8E4DC;
+}
+
+/* 2. Global Reset & Typography */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: "Newsreader", "Source Serif 4", Georgia, serif;
+  line-height: 1.7;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 200ms ease, color 200ms ease;
+  overflow-x: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+/* Responsive Login Background (Laptop vs Mobile) */
+body.auth-view {
+  background-color: var(--bg);
+  background-image: url('bg-laptop.png');
+  background-size: cover;
+  background-position: center left;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  body.auth-view {
+    background-image: url('bg-mobile.png');
+    background-position: center center;
+    background-attachment: scroll;
+  }
+}
+
+/* Theme overlays on login background */
+html[data-theme="dark"] body.auth-view,
+[data-theme="dark"] body.auth-view {
+  background-image: linear-gradient(rgba(22, 21, 19, 0.78), rgba(22, 21, 19, 0.78)), url('bg-laptop.png');
+}
+
+@media (max-width: 768px) {
+  html[data-theme="dark"] body.auth-view,
+  [data-theme="dark"] body.auth-view {
+    background-image: linear-gradient(rgba(22, 21, 19, 0.78), rgba(22, 21, 19, 0.78)), url('bg-mobile.png');
+  }
+}
+
+html[data-theme="sepia"] body.auth-view,
+[data-theme="sepia"] body.auth-view {
+  background-image: linear-gradient(rgba(243, 235, 216, 0.25), rgba(243, 235, 216, 0.25)), url('bg-laptop.png');
+}
+
+@media (max-width: 768px) {
+  html[data-theme="sepia"] body.auth-view,
+  [data-theme="sepia"] body.auth-view {
+    background-image: linear-gradient(rgba(243, 235, 216, 0.25), rgba(243, 235, 216, 0.25)), url('bg-mobile.png');
+  }
+}
+
+/* Floating card on login page */
+body.auth-view .quiet-card {
+  background: rgba(242, 238, 231, 0.90);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(229, 223, 213, 0.85);
+  box-shadow: 0 12px 35px rgba(31, 30, 28, 0.08);
+}
+
+html[data-theme="sepia"] body.auth-view .quiet-card {
+  background: rgba(234, 224, 201, 0.92);
+  border: 1px solid rgba(223, 211, 186, 0.85);
+}
+
+html[data-theme="dark"] body.auth-view .quiet-card {
+  background: rgba(31, 29, 26, 0.90);
+  border: 1px solid rgba(45, 42, 38, 0.85);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+}
+
+/* UI typography for labels, buttons, dates */
+.ui-text,
+button,
+input,
+label,
+.post-date,
+.site-subtitle,
+.greeting-sub,
+.quiz-meta,
+.alert-text {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* 3. Layout Column (Constrained to 650px) */
+.page-wrapper {
+  width: 100%;
+  max-width: 650px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 640px) {
+  .page-wrapper {
+    padding: 2rem 1.25rem 4rem 1.25rem;
+  }
+}
+
+/* 4. View Transitions */
+.view-panel {
+  display: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.view-panel.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 5. Minimal Site Title & Header */
+.letter-header {
+  text-align: center;
+  margin-bottom: 2.75rem;
+}
+
+.site-title {
+  font-family: "Playwrite BE VLG", cursive, serif;
+  font-size: 2.35rem;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  margin-bottom: 0.65rem;
+  line-height: 1.3;
+}
+
+.site-intro {
+  font-family: "Playwrite AU SA Guides", cursive, serif;
+  font-size: 1.15rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* 6. Cards & Welcome Screen */
+.quiet-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.25rem 2rem;
+  box-shadow: var(--shadow);
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+@media (max-width: 480px) {
+  .quiet-card {
+    padding: 1.75rem 1.25rem;
+  }
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+  letter-spacing: 0.01em;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 0.95rem;
+  font-size: 16px; /* Prevents iOS Safari auto-zoom */
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.form-input::placeholder {
+  color: var(--muted);
+  opacity: 0.55;
+  font-style: italic;
+  font-family: "Newsreader", Georgia, serif;
+}
+
+.form-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(91, 112, 101, 0.15);
+}
+
+.btn-primary {
+  width: 100%;
+  min-height: 46px; /* Accessible 44px+ tap target */
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--bg);
+  background: var(--ink);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: opacity 150ms ease, transform 100ms ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 7. Gentle Human Feedback Message */
+.gentle-alert {
+  display: none;
+  padding: 0.85rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+  font-style: italic;
+  font-family: "Newsreader", Georgia, serif;
+}
+
+.gentle-alert.visible {
+  display: block;
+  animation: softFadeIn 200ms ease;
+}
+
+@keyframes softFadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 8. Gate 2 - Single Card Scrollable Quiz */
+.quiz-instruction {
+  font-size: 1.05rem;
+  font-style: italic;
+  color: var(--muted);
+  margin-bottom: 1.75rem;
+  text-align: center;
+}
+
+.quiz-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.quiz-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.quiz-prompt {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+/* 9. Feed View & Invisible Tiers */
+.feed-header {
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.personal-greeting {
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 0.35rem;
+}
+
+.greeting-sub {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.posts-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.post-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: 1.25rem 1.35rem;
+  margin: -1.25rem -1.35rem;
+  border-radius: 10px;
+  background: transparent;
+  transition: background-color 150ms ease, transform 100ms ease;
+  cursor: pointer;
+}
+
+.post-card:hover {
+  background: var(--surface);
+}
+
+.post-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+
+.post-card-date {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.inner-circle-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+.post-card-title {
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.35;
+  margin-bottom: 0.45rem;
+  transition: color 150ms ease;
+}
+
+.post-card:hover .post-card-title {
+  color: var(--accent);
+}
+
+.post-card-summary {
+  font-size: 0.98rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.feed-footer-note {
+  margin-top: 3.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* 10. Sticky Minimal Reader Controls */
+.reader-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0.65rem 1.5rem;
+  margin: -3rem -1.5rem 2rem -1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+@media (max-width: 640px) {
+  .reader-top-bar {
+    margin: -2rem -1.25rem 1.5rem -1.25rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  min-height: 44px;
+  transition: color 150ms ease;
+}
+
+.btn-back:hover {
+  color: var(--ink);
+}
+
+.reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-tool {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  min-width: 38px;
+  height: 36px;
+  padding: 0 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+}
+
+.btn-tool:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* 3-Way Theme Segmented Control */
+.theme-selector {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.theme-pill-btn {
+  background: transparent;
+  border: none;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 0.3rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.theme-pill-btn.active {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* 11. Article Canvas Chunks Container */
+.article-chunks-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 650px;
+  margin: 0 auto;
+}
+
+.reader-canvas-block {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  pointer-events: none; /* Touch scrolling passes through smoothly */
+}
+
+/* 12. Soft Privacy Curtain (Blur-on-Unfocus) */
+.privacy-curtain {
+  position: fixed;
+  inset: 0;
+  background: var(--curtain-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+  cursor: pointer;
+}
+
+.privacy-curtain.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.curtain-card {
+  text-align: center;
+  padding: 2rem;
+  max-width: 400px;
+  color: var(--curtain-text);
+}
+
+.curtain-title {
+  font-size: 1.4rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+}
+
+.curtain-sub {
+  font-size: 0.95rem;
+  color: var(--muted);
+  font-style: italic;
+  font-family: "Newsreader", Georgia, serif;
+}
+
+/* 13. Calm Spinner */
+.calm-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  animation: calmSpin 0.75s linear infinite;
+}
+
+@keyframes calmSpin {
+  to { transform: rotate(360deg); }
+}

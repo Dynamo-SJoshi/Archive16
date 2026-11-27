@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="paper">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARCHIVE16</title>
+
+  <!-- Google Fonts: Newsreader, Inter, Playwrite BE VLG, Playwrite AU SA Guides -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Playwrite+AU+SA+Guides&family=Playwrite+BE+VLG:wght@100..400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+</head>
+<body class="auth-view">
+
+  <div class="page-wrapper">
+
+    <!-- ==========================================
+         GATE 1: WELCOME SCREEN
+         ========================================== -->
+    <section id="viewGate1" class="view-panel active">
+      <header class="letter-header">
+        <h1 class="site-title">ARCHIVE16</h1>
+        <p class="site-intro">A gathering of thoughts for people who know me best.</p>
+      </header>
+
+      <div class="quiet-card">
+        <div id="gate1Alert" class="gentle-alert"></div>
+
+        <form id="gate1Form">
+          <div class="form-group" id="inviteTokenGroup">
+            <label class="form-label" for="tokenInput">Personal invite code</label>
+            <input type="text" id="tokenInput" class="form-input" placeholder="e.g. tok_..." required autocomplete="off">
+          </div>
+
+          <button type="submit" id="gate1SubmitBtn" class="btn-primary ui-text">
+            <span>Continue</span>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         GATE 2: SINGLE-CARD SCROLLABLE QUIZ
+         ========================================== -->
+    <section id="viewGate2" class="view-panel">
+      <header class="letter-header">
+        <h1 class="site-title">ARCHIVE16</h1>
+        <p id="quizInstructionText" class="site-intro">Answer at least 4 of these 5 to step in.</p>
+      </header>
+
+      <div class="quiet-card">
+        <div id="gate2Alert" class="gentle-alert"></div>
+
+        <form id="quizForm">
+          <div id="quizListContainer" class="quiz-items">
+            <!-- Questions rendered dynamically with hints as placeholders -->
+          </div>
+
+          <button type="submit" id="quizSubmitBtn" class="btn-primary ui-text">
+            <span>Open notes</span>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         VIEW 3: FEED EXPERIENCE (CHRONOLOGICAL, INVISIBLE TIERS)
+         ========================================== -->
+    <section id="viewFeed" class="view-panel">
+      <header class="feed-header">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;">
+          <div>
+            <h1 id="feedGreeting" class="personal-greeting">Hey Friend — glad you're here.</h1>
+            <p class="greeting-sub">Collected letters and reflections.</p>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem;">
+            <!-- 3-Way Theme Switcher -->
+            <div class="theme-selector ui-text" role="radiogroup" aria-label="Theme">
+              <button type="button" class="theme-pill-btn active" data-theme-val="paper">Paper</button>
+              <button type="button" class="theme-pill-btn" data-theme-val="sepia">Sepia</button>
+              <button type="button" class="theme-pill-btn" data-theme-val="dark">Dark</button>
+            </div>
+
+            <button type="button" class="btn-tool lock-vault-btn" title="Lock notes and close" aria-label="Lock">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div id="postsFeedContainer" class="posts-feed">
+        <!-- Chronological post cards injected dynamically -->
+      </div>
+
+      <div class="feed-footer-note" id="feedFooterNote">
+        Shared privately with you.
+      </div>
+    </section>
+
+    <!-- ==========================================
+         VIEW 4: BLOCK-CHUNKED ARTICLE READER
+         ========================================== -->
+    <section id="viewReader" class="view-panel">
+      <!-- Sticky Minimal Reader Top Bar -->
+      <nav class="reader-top-bar ui-text">
+        <button type="button" id="backToFeedBtn" class="btn-back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>All notes</span>
+        </button>
+
+        <div class="reader-actions">
+          <!-- Text Size Reflow Buttons -->
+          <button type="button" id="textSizeDownBtn" class="btn-tool" title="Smaller text" aria-label="Smaller text">A-</button>
+          <button type="button" id="textSizeUpBtn" class="btn-tool" title="Larger text" aria-label="Larger text">A+</button>
+
+          <!-- 3-Way Theme Selector -->
+          <div class="theme-selector" role="radiogroup" aria-label="Theme">
+            <button type="button" class="theme-pill-btn active" data-theme-val="paper">Paper</button>
+            <button type="button" class="theme-pill-btn" data-theme-val="sepia">Sepia</button>
+            <button type="button" class="theme-pill-btn" data-theme-val="dark">Dark</button>
+          </div>
+
+          <!-- Discreet Lock Icon -->
+          <button type="button" class="btn-tool lock-vault-btn" title="Lock notes and close" aria-label="Lock">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Scrollable Block-Level Canvases Stack -->
+      <div id="articleChunksWrapper" class="article-chunks-wrapper">
+        <!-- Rendered by BlockCanvasReader -->
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==========================================
+       SOFT PRIVACY CURTAIN (BLUR-ON-UNFOCUS)
+       ========================================== -->
+  <div id="privacyCurtain" class="privacy-curtain" role="dialog" aria-modal="true" aria-label="Privacy Curtain">
+    <div class="curtain-card">
+      <h2 class="curtain-title">Paused while away</h2>
+      <p class="curtain-sub">Click anywhere to continue reading.</p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
